@@ -13,10 +13,16 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
+use std::mem;
+
 fn main() {
     let path = Path::new("test.csv");
     let mut mkc = MarkovChain::new();
     mkc.parse_file(path);
+}
+
+fn to_le_bytes(num: i32) -> [u8; 4] {
+    unsafe { mem::transmute(num.to_le()) }
 }
 
 pub struct MarkovChain {
@@ -70,6 +76,25 @@ impl MarkovChain {
         }
 
         println!("Finished parsing.");
+
+        let words_count: i32 = self.tokens.len() as i32;
+        let mut ser: Vec<u8> = Vec::new();
+        ser.extend_from_slice(&to_le_bytes(words_count));
+        for (word, id) in self.tokens.iter() {
+            ser.extend_from_slice(&to_le_bytes(*id));
+            let wordc = word.clone();
+            let mut bytes = wordc.into_bytes();
+            bytes.push(b'\0');
+            ser.append(&mut bytes);
+        }
+
+        let bin_path = Path::new("words.b");
+        if let Ok(mut bin_file) = File::create(bin_path) {
+            match bin_file.write_all(&ser) {
+                Err(why) => println!("Error while writing binary: {}", why),
+                Ok(_) => println!("Binary saved"),
+            };
+        }
 
         let words_path = Path::new("words.txt");
         if let Ok(mut word_file) = File::create(words_path) {
