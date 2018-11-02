@@ -25,6 +25,10 @@ fn to_le_bytes(num: i32) -> [u8; 4] {
     unsafe { mem::transmute(num.to_le()) }
 }
 
+fn float2byte(num: f32) -> [u8; 4] {
+    unsafe { mem::transmute(num.to_bits().to_le()) }
+}
+
 pub struct MarkovChain {
     pub counter: i32,
     pub tokens: HashMap<String, i32>,
@@ -77,6 +81,47 @@ impl MarkovChain {
 
         println!("Finished parsing.");
 
+        let ser = self.binary_serialize();
+        let bin_path = Path::new("words.b");
+        if let Ok(mut bin_file) = File::create(bin_path) {
+            match bin_file.write_all(&ser) {
+                Err(why) => println!("Error while writing binary: {}", why),
+                Ok(_) => println!("Binary saved"),
+            };
+        }
+
+        let words_path = Path::new("words.txt");
+        if let Ok(mut word_file) = File::create(words_path) {
+            let buff = self.txt_serialize();
+            match word_file.write_all(buff.as_bytes()) {
+                Err(why) => panic!("Error while writing word file: {}", why),
+                Ok(_) => println!("Word file saved."),
+            };
+        }
+    }
+
+    pub fn txt_serialize(&self) -> String {
+        let mut buff = String::new();
+        for (word, id) in self.tokens.iter() {
+            buff.push_str(&format!("{}:{};", word, id));
+        }
+        buff.push_str("\n");
+
+        let props = self.props.borrow();
+        for (id, val) in props.iter() {
+            buff.push_str(&format!("{}: [", id));
+
+            for (otherid, count) in val.iter() {
+                buff.push_str(&format!("{} -> {}, ", otherid, count));
+            }
+
+            buff.push_str("]\n");
+        }
+
+        buff
+    }
+
+    pub fn binary_serialize(&self) -> Vec<u8> {
         let words_count: i32 = self.tokens.len() as i32;
         let mut ser: Vec<u8> = Vec::new();
         ser.extend_from_slice(&to_le_bytes(words_count));
@@ -88,38 +133,18 @@ impl MarkovChain {
             ser.append(&mut bytes);
         }
 
-        let bin_path = Path::new("words.b");
-        if let Ok(mut bin_file) = File::create(bin_path) {
-            match bin_file.write_all(&ser) {
-                Err(why) => println!("Error while writing binary: {}", why),
-                Ok(_) => println!("Binary saved"),
-            };
+        let props = self.props.borrow();
+        for (id, val) in props.iter() {
+            ser.extend_from_slice(&to_le_bytes(*id));
+            ser.extend_from_slice(&to_le_bytes(val.len() as i32));
+
+            for (otherid, count) in val.iter() {
+                ser.extend_from_slice(&to_le_bytes(*otherid));
+                ser.extend_from_slice(&float2byte((*count as f32) / (val.len() as f32)))
+            }
         }
 
-        let words_path = Path::new("words.txt");
-        if let Ok(mut word_file) = File::create(words_path) {
-            let mut buff = String::new();
-            for (word, id) in self.tokens.iter() {
-                buff.push_str(&format!("{}:{};", word, id));
-            }
-            buff.push_str("\n");
-
-            let props = self.props.borrow();
-            for (id, val) in props.iter() {
-                buff.push_str(&format!("{}: [", id));
-
-                for (otherid, count) in val.iter() {
-                    buff.push_str(&format!("{} -> {}, ", otherid, count));
-                }
-
-                buff.push_str("]\n");
-            }
-
-            match word_file.write_all(buff.as_bytes()) {
-                Err(why) => panic!("Error while writing word file: {}", why),
-                Ok(_) => println!("Word file saved."),
-            };
-        }
+        ser
     }
 
     fn clean_line(line: &String) -> String {
