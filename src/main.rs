@@ -5,7 +5,9 @@ use csv::ReaderBuilder;
 use regex::Regex;
 
 use std::collections::HashMap;
-use std::collections::LinkedList;
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use std::fs::File;
 use std::io::Write;
@@ -20,7 +22,7 @@ fn main() {
 pub struct MarkovChain {
     pub counter: i32,
     pub tokens: HashMap<String, i32>,
-    pub props: HashMap<i32, HashMap<i32, i32>>,
+    pub props: Rc<RefCell<HashMap<i32, HashMap<i32, i32>>>>,
 }
 
 impl MarkovChain {
@@ -28,7 +30,7 @@ impl MarkovChain {
         MarkovChain {
             counter: 0,
             tokens: HashMap::new(),
-            props: HashMap::new(),
+            props: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 
@@ -67,6 +69,8 @@ impl MarkovChain {
             }
         }
 
+        println!("Finished parsing.");
+
         let words_path = Path::new("words.txt");
         if let Ok(mut word_file) = File::create(words_path) {
             let mut buff = String::new();
@@ -74,6 +78,17 @@ impl MarkovChain {
                 buff.push_str(&format!("{}:{};", word, id));
             }
             buff.push_str("\n");
+
+            let props = self.props.borrow();
+            for (id, val) in props.iter() {
+                buff.push_str(&format!("{}: [", id));
+
+                for (otherid, count) in val.iter() {
+                    buff.push_str(&format!("{} -> {}, ", otherid, count));
+                }
+
+                buff.push_str("]\n");
+            }
 
             match word_file.write_all(buff.as_bytes()) {
                 Err(why) => panic!("Error while writing word file: {}", why),
@@ -86,17 +101,53 @@ impl MarkovChain {
         line.to_lowercase()
     }
 
+    fn get_id(&self, word: &String) -> i32 {
+        *self.tokens.get(word).unwrap()
+    }
+
+    fn increment_prop(id: i32, props: &mut HashMap<i32, i32>) {
+        let mut c = 0;
+        {
+            if props.contains_key(&id) {
+                c = *props.get(&id).unwrap()
+            } else {
+                props.insert(id, 1);
+            }
+        }
+        props.insert(id, c + 1);
+    }
+
+    fn add_props(&self, word: &String, next: &String) {
+        let id = self.get_id(word);
+        let next_id = self.get_id(next);
+        let mut props_ref = self.props.borrow_mut();
+
+        if props_ref.contains_key(&id) {
+            let mut_prop = props_ref.get_mut(&id).unwrap();
+            MarkovChain::increment_prop(next_id, mut_prop);
+        } else {
+            props_ref.insert(id, HashMap::new());
+            props_ref.get_mut(&id).unwrap().insert(next_id, 1);
+        }
+    }
+
     fn get_words(&mut self, line: &String) {
-        let mut words: LinkedList<String> = LinkedList::new();
+        let mut words: Vec<String> = Vec::new();
         let re = Regex::new(r"\w+").unwrap();
         for cap in re.captures_iter(line) {
-            words.push_back(cap[0].to_string());
+            words.push(cap[0].to_string());
         }
 
         for word in words.iter() {
             if !self.tokens.contains_key(word) {
                 self.tokens.insert(word.to_string(), self.counter);
                 self.counter += 1;
+            }
+        }
+
+        for i in 0..words.len() {
+            if i < (words.len() - 1) {
+                self.add_props(&words[i], &words[i + 1]);
             }
         }
     }
