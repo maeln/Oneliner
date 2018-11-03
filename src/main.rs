@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use std::fs::File;
+use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 
@@ -17,16 +18,36 @@ use std::mem;
 
 fn main() {
     let path = Path::new("test.csv");
+    let bin_path = Path::new("words.b");
+    let txt_path = Path::new("words.txt");
+    let cmp_path = Path::new("comp.txt");
+
     let mut mkc = MarkovChain::new();
     mkc.parse_file(path);
+    mkc.save_binary(bin_path);
+    mkc.save_txt(txt_path);
+
+    let mut mkc2 = MarkovChain::from_binary(bin_path).unwrap();
+    mkc2.save_txt(cmp_path);
 }
 
 fn to_le_bytes(num: i32) -> [u8; 4] {
     unsafe { mem::transmute(num.to_le()) }
 }
 
+fn from_le_bytes(num: &[u8; 4]) -> i32 {
+    unsafe { mem::transmute::<[u8; 4], i32>(*num).to_le() }
+}
+
 fn float2byte(num: f32) -> [u8; 4] {
     unsafe { mem::transmute(num.to_bits().to_le()) }
+}
+
+fn byte2float(num: &[u8; 4]) -> f32 {
+    unsafe {
+        let unsigned = mem::transmute::<[u8; 4], u32>(*num).to_le();
+        f32::from_bits(unsigned)
+    }
 }
 
 pub struct MarkovChain {
@@ -42,6 +63,72 @@ impl MarkovChain {
             tokens: HashMap::new(),
             props: Rc::new(RefCell::new(HashMap::new())),
         }
+    }
+
+    fn read_header(file: &mut File) -> Result<i32, ()> {
+        let mut buf32: [u8; 4] = [0; 4];
+        match file.read_exact(&mut buf32) {
+            Ok(_) => Ok(from_le_bytes(&buf32)),
+            Err(_) => Err(()),
+        }
+    }
+
+    fn read_entry(file: &mut File) -> Result<(i32, String), &str> {
+        let mut buf32: [u8; 4] = [0; 4];
+
+        let idres = file.read_exact(&mut buf32);
+        if idres.is_err() {
+            return Err("Could not read entry ID.");
+        }
+        let id = from_le_bytes(&buf32);
+
+        let mut buf8: [u8; 1] = [0; 1];
+        let mut cstr: Vec<u8> = Vec::new();
+        let mut reached_null = false;
+        while !reached_null {
+            let idres = file.read_exact(&mut buf8);
+            if idres.is_err() {
+                return Err("Could not read entry word.");
+            }
+            if buf8[0] == 0 {
+                reached_null = true;
+            } else {
+                cstr.push(buf8[0]);
+            }
+        }
+
+        let resword = String::from_utf8(cstr);
+        if resword.is_err() {
+            return Err("Unable to convert word to UTF-8.");
+        }
+        let word = resword.unwrap();
+
+        Ok((id, word))
+    }
+
+    pub fn from_binary(path: &Path) -> Result<MarkovChain, &str> {
+        let mut counter = 0;
+        let mut tokens: HashMap<String, i32> = HashMap::new();
+        let mut props: Rc<RefCell<HashMap<i32, HashMap<i32, i32>>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+
+        let fres = File::open(path);
+        if fres.is_err() {
+            return Err("Impossible to open file");
+        }
+        let mut file = fres.unwrap();
+
+        counter = MarkovChain::read_header(&mut file).unwrap();
+        for _ in 0..counter {
+            let (id, word) = MarkovChain::read_entry(&mut file).unwrap();
+            tokens.insert(word, id);
+        }
+
+        Ok(MarkovChain {
+            counter: counter,
+            tokens: tokens,
+            props: props,
+        })
     }
 
     pub fn parse_file(&mut self, path: &Path) {
@@ -80,23 +167,13 @@ impl MarkovChain {
         }
 
         println!("Finished parsing.");
+    }
 
-        let ser = self.binary_serialize();
-        let bin_path = Path::new("words.b");
-        if let Ok(mut bin_file) = File::create(bin_path) {
-            match bin_file.write_all(&ser) {
-                Err(why) => println!("Error while writing binary: {}", why),
-                Ok(_) => println!("Binary saved"),
-            };
-        }
-
-        let words_path = Path::new("words.txt");
-        if let Ok(mut word_file) = File::create(words_path) {
-            let buff = self.txt_serialize();
-            match word_file.write_all(buff.as_bytes()) {
-                Err(why) => panic!("Error while writing word file: {}", why),
-                Ok(_) => println!("Word file saved."),
-            };
+    pub fn save_txt(&self, path: &Path) -> Result<(), std::io::Error> {
+        let buff = self.txt_serialize();
+        match File::create(path) {
+            Ok(mut file) => file.write_all(buff.as_bytes()),
+            Err(w) => Err(w),
         }
     }
 
@@ -119,6 +196,14 @@ impl MarkovChain {
         }
 
         buff
+    }
+
+    pub fn save_binary(&self, path: &Path) -> Result<(), std::io::Error> {
+        let ser = self.binary_serialize();
+        match File::create(path) {
+            Ok(mut bin_file) => bin_file.write_all(&ser),
+            Err(w) => Err(w),
+        }
     }
 
     pub fn binary_serialize(&self) -> Vec<u8> {
