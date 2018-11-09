@@ -51,6 +51,7 @@ fn byte2float(num: [u8; 4]) -> f32 {
     unsafe { f32::from_bits(mem::transmute::<[u8; 4], u32>(num).to_le()) }
 }
 
+#[derive(Default)]
 pub struct MarkovChain {
     pub counter: i32,
     pub tokens: HashMap<String, i32>,
@@ -257,7 +258,7 @@ impl MarkovChain {
         self.props
             .entry(id)
             .and_modify(|e| MarkovChain::increment_prop(next_id, e))
-            .or_insert(HashMap::new())
+            .or_insert_with(HashMap::new)
             .insert(next_id, 1);
     }
 
