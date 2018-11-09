@@ -6,9 +6,6 @@ use regex::Regex;
 
 use std::collections::HashMap;
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
@@ -24,36 +21,40 @@ fn main() {
 
     let mut mkc = MarkovChain::new();
     mkc.parse_file(path);
-    mkc.save_binary(bin_path);
-    mkc.save_txt(txt_path);
+    if mkc.save_binary(bin_path).is_err() {
+        panic!("Could not save binary");
+    }
 
-    let mut mkc2 = MarkovChain::from_binary(bin_path).unwrap();
-    mkc2.save_txt(cmp_path);
+    if mkc.save_txt(txt_path).is_err() {
+        panic!("Could not save the txt");
+    }
+
+    let mkc2 = MarkovChain::from_binary(bin_path).unwrap();
+    if mkc2.save_txt(cmp_path).is_err() {
+        panic!("Could not save unserialized txt");
+    }
 }
 
-fn to_le_bytes(num: i32) -> [u8; 4] {
+fn i32tolebytes(num: i32) -> [u8; 4] {
     unsafe { mem::transmute(num.to_le()) }
 }
 
-fn from_le_bytes(num: &[u8; 4]) -> i32 {
-    unsafe { mem::transmute::<[u8; 4], i32>(*num).to_le() }
+fn lebytestoi32(num: [u8; 4]) -> i32 {
+    unsafe { mem::transmute::<[u8; 4], i32>(num).to_le() }
 }
 
 fn float2byte(num: f32) -> [u8; 4] {
     unsafe { mem::transmute(num.to_bits().to_le()) }
 }
 
-fn byte2float(num: &[u8; 4]) -> f32 {
-    unsafe {
-        let unsigned = mem::transmute::<[u8; 4], u32>(*num).to_le();
-        f32::from_bits(unsigned)
-    }
+fn byte2float(num: [u8; 4]) -> f32 {
+    unsafe { f32::from_bits(mem::transmute::<[u8; 4], u32>(num).to_le()) }
 }
 
 pub struct MarkovChain {
     pub counter: i32,
     pub tokens: HashMap<String, i32>,
-    pub props: Rc<RefCell<HashMap<i32, HashMap<i32, i32>>>>,
+    pub props: HashMap<i32, HashMap<i32, i32>>,
 }
 
 impl MarkovChain {
@@ -61,14 +62,14 @@ impl MarkovChain {
         MarkovChain {
             counter: 0,
             tokens: HashMap::new(),
-            props: Rc::new(RefCell::new(HashMap::new())),
+            props: HashMap::new(),
         }
     }
 
     fn read_header(file: &mut File) -> Result<i32, ()> {
         let mut buf32: [u8; 4] = [0; 4];
         match file.read_exact(&mut buf32) {
-            Ok(_) => Ok(from_le_bytes(&buf32)),
+            Ok(_) => Ok(lebytestoi32(buf32)),
             Err(_) => Err(()),
         }
     }
@@ -80,7 +81,7 @@ impl MarkovChain {
         if idres.is_err() {
             return Err("Could not read entry ID.");
         }
-        let id = from_le_bytes(&buf32);
+        let id = lebytestoi32(buf32);
 
         let mut buf8: [u8; 1] = [0; 1];
         let mut cstr: Vec<u8> = Vec::new();
@@ -106,11 +107,11 @@ impl MarkovChain {
         Ok((id, word))
     }
 
+    /// Unserialized a Markov chain from a binary file.
     pub fn from_binary(path: &Path) -> Result<MarkovChain, &str> {
         let mut counter = 0;
         let mut tokens: HashMap<String, i32> = HashMap::new();
-        let mut props: Rc<RefCell<HashMap<i32, HashMap<i32, i32>>>> =
-            Rc::new(RefCell::new(HashMap::new()));
+        let mut props: HashMap<i32, HashMap<i32, i32>> = HashMap::new();
 
         let fres = File::open(path);
         if fres.is_err() {
@@ -125,12 +126,13 @@ impl MarkovChain {
         }
 
         Ok(MarkovChain {
-            counter: counter,
-            tokens: tokens,
-            props: props,
+            counter,
+            tokens,
+            props,
         })
     }
 
+    /// Parse a oneliner CSV and make it into a markov chain.
     pub fn parse_file(&mut self, path: &Path) {
         let fname = path.display();
 
@@ -169,6 +171,7 @@ impl MarkovChain {
         println!("Finished parsing.");
     }
 
+    /// Save a plain text version of the markov chain data into a file.
     pub fn save_txt(&self, path: &Path) -> Result<(), std::io::Error> {
         let buff = self.txt_serialize();
         match File::create(path) {
@@ -177,6 +180,7 @@ impl MarkovChain {
         }
     }
 
+    /// Serialize the markov chain data to a plain text format.
     pub fn txt_serialize(&self) -> String {
         let mut buff = String::new();
         for (word, id) in self.tokens.iter() {
@@ -184,8 +188,7 @@ impl MarkovChain {
         }
         buff.push_str("\n");
 
-        let props = self.props.borrow();
-        for (id, val) in props.iter() {
+        for (id, val) in self.props.iter() {
             buff.push_str(&format!("{}: [", id));
 
             for (otherid, count) in val.iter() {
@@ -198,6 +201,7 @@ impl MarkovChain {
         buff
     }
 
+    /// Save a binary version of the markov chain data into a file.
     pub fn save_binary(&self, path: &Path) -> Result<(), std::io::Error> {
         let ser = self.binary_serialize();
         match File::create(path) {
@@ -206,25 +210,25 @@ impl MarkovChain {
         }
     }
 
+    /// Serialize the markov chain data to a binary format.
     pub fn binary_serialize(&self) -> Vec<u8> {
         let words_count: i32 = self.tokens.len() as i32;
         let mut ser: Vec<u8> = Vec::new();
-        ser.extend_from_slice(&to_le_bytes(words_count));
+        ser.extend_from_slice(&i32tolebytes(words_count));
         for (word, id) in self.tokens.iter() {
-            ser.extend_from_slice(&to_le_bytes(*id));
+            ser.extend_from_slice(&i32tolebytes(*id));
             let wordc = word.clone();
             let mut bytes = wordc.into_bytes();
             bytes.push(b'\0');
             ser.append(&mut bytes);
         }
 
-        let props = self.props.borrow();
-        for (id, val) in props.iter() {
-            ser.extend_from_slice(&to_le_bytes(*id));
-            ser.extend_from_slice(&to_le_bytes(val.len() as i32));
+        for (id, val) in self.props.iter() {
+            ser.extend_from_slice(&i32tolebytes(*id));
+            ser.extend_from_slice(&i32tolebytes(val.len() as i32));
 
             for (otherid, count) in val.iter() {
-                ser.extend_from_slice(&to_le_bytes(*otherid));
+                ser.extend_from_slice(&i32tolebytes(*otherid));
                 ser.extend_from_slice(&float2byte((*count as f32) / (val.len() as f32)))
             }
         }
@@ -232,41 +236,33 @@ impl MarkovChain {
         ser
     }
 
-    fn clean_line(line: &String) -> String {
+    /// Clean the text of a line.
+    fn clean_line(line: &str) -> String {
         line.to_lowercase()
     }
 
-    fn get_id(&self, word: &String) -> i32 {
-        *self.tokens.get(word).unwrap()
+    fn get_id(&self, word: &str) -> i32 {
+        self.tokens[word]
     }
 
     fn increment_prop(id: i32, props: &mut HashMap<i32, i32>) {
-        let mut c = 0;
-        {
-            if props.contains_key(&id) {
-                c = *props.get(&id).unwrap()
-            } else {
-                props.insert(id, 1);
-            }
-        }
-        props.insert(id, c + 1);
+        props.entry(id).and_modify(|e| *e += 1).or_insert(1);
     }
 
-    fn add_props(&self, word: &String, next: &String) {
+    /// Add a following word to a word or increment the number of time it follows it.
+    fn add_props(&mut self, word: &str, next: &str) {
         let id = self.get_id(word);
         let next_id = self.get_id(next);
-        let mut props_ref = self.props.borrow_mut();
 
-        if props_ref.contains_key(&id) {
-            let mut_prop = props_ref.get_mut(&id).unwrap();
-            MarkovChain::increment_prop(next_id, mut_prop);
-        } else {
-            props_ref.insert(id, HashMap::new());
-            props_ref.get_mut(&id).unwrap().insert(next_id, 1);
-        }
+        self.props
+            .entry(id)
+            .and_modify(|e| MarkovChain::increment_prop(next_id, e))
+            .or_insert(HashMap::new())
+            .insert(next_id, 1);
     }
 
-    fn get_words(&mut self, line: &String) {
+    /// Get all the words in a oneliner.
+    fn get_words(&mut self, line: &str) {
         let mut words: Vec<String> = Vec::new();
         let re = Regex::new(r"\w+").unwrap();
         for cap in re.captures_iter(line) {
