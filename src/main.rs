@@ -45,17 +45,15 @@ fn lebytestoi32(num: [u8; 4]) -> i32 {
 
 #[derive(Default)]
 pub struct MarkovChain {
-    pub counter: i32,
-    pub tokens: HashMap<String, i32>,
-    pub props: HashMap<i32, HashMap<i32, i32>>,
+    pub tokens: Vec<String>,
+    pub props: Vec<HashMap<i32, i32>>,
 }
 
 impl MarkovChain {
     pub fn new() -> MarkovChain {
         MarkovChain {
-            counter: 0,
-            tokens: HashMap::new(),
-            props: HashMap::new(),
+            tokens: Vec::new(),
+            props: Vec::new(),
         }
     }
 
@@ -67,15 +65,7 @@ impl MarkovChain {
         }
     }
 
-    fn read_entry(file: &mut File) -> Result<(i32, String), &str> {
-        let mut buf32: [u8; 4] = [0; 4];
-
-        let idres = file.read_exact(&mut buf32);
-        if idres.is_err() {
-            return Err("Could not read entry ID.");
-        }
-        let id = lebytestoi32(buf32);
-
+    fn read_entry(file: &mut File) -> Result<String, &str> {
         let mut buf8: [u8; 1] = [0; 1];
         let mut cstr: Vec<u8> = Vec::new();
         let mut reached_null = false;
@@ -97,13 +87,13 @@ impl MarkovChain {
         }
         let word = resword.unwrap();
 
-        Ok((id, word))
+        Ok(word)
     }
 
     /// Unserialized a Markov chain from a binary file.
     pub fn from_binary(path: &Path) -> Result<MarkovChain, &str> {
-        let mut tokens: HashMap<String, i32> = HashMap::new();
-        let mut props: HashMap<i32, HashMap<i32, i32>> = HashMap::new();
+        let mut tokens: Vec<String> = Vec::new();
+        let mut props: Vec<HashMap<i32, i32>> = Vec::new();
 
         let fres = File::open(path);
         if fres.is_err() {
@@ -113,15 +103,11 @@ impl MarkovChain {
 
         let counter = MarkovChain::read_header(&mut file).unwrap();
         for _ in 0..counter {
-            let (id, word) = MarkovChain::read_entry(&mut file).unwrap();
-            tokens.insert(word, id);
+            let word = MarkovChain::read_entry(&mut file).unwrap();
+            tokens.push(word);
         }
 
-        Ok(MarkovChain {
-            counter,
-            tokens,
-            props,
-        })
+        Ok(MarkovChain { tokens, props })
     }
 
     /// Parse a oneliner CSV and make it into a markov chain.
@@ -175,12 +161,13 @@ impl MarkovChain {
     /// Serialize the markov chain data to a plain text format.
     pub fn txt_serialize(&self) -> String {
         let mut buff = String::new();
-        for (word, id) in self.tokens.iter() {
-            buff.push_str(&format!("{}:{};", word, id));
+
+        for word in self.tokens.iter() {
+            buff.push_str(&format!("{};", word));
         }
         buff.push_str("\n");
 
-        for (id, val) in self.props.iter() {
+        for (id, val) in self.props.iter().enumerate() {
             buff.push_str(&format!("{}: [", id));
 
             for (otherid, count) in val.iter() {
@@ -207,16 +194,15 @@ impl MarkovChain {
         let words_count: i32 = self.tokens.len() as i32;
         let mut ser: Vec<u8> = Vec::new();
         ser.extend_from_slice(&i32tolebytes(words_count));
-        for (word, id) in self.tokens.iter() {
-            ser.extend_from_slice(&i32tolebytes(*id));
+        for word in self.tokens.iter() {
             let wordc = word.clone();
             let mut bytes = wordc.into_bytes();
             bytes.push(b'\0');
             ser.append(&mut bytes);
         }
 
-        for (id, val) in self.props.iter() {
-            ser.extend_from_slice(&i32tolebytes(*id));
+        for (id, val) in self.props.iter().enumerate() {
+            ser.extend_from_slice(&i32tolebytes(id as i32));
             ser.extend_from_slice(&i32tolebytes(val.len() as i32));
 
             for (otherid, count) in val.iter() {
@@ -233,8 +219,11 @@ impl MarkovChain {
         line.to_lowercase()
     }
 
-    fn get_id(&self, word: &str) -> i32 {
-        self.tokens[word]
+    fn get_id(&self, word: &str) -> Option<i32> {
+        match self.tokens.iter().position(|x| x == word) {
+            Some(n) => Some(n as i32),
+            None => None,
+        }
     }
 
     fn increment_prop(id: i32, props: &mut HashMap<i32, i32>) {
@@ -243,14 +232,10 @@ impl MarkovChain {
 
     /// Add a following word to a word or increment the number of time it follows it.
     fn add_props(&mut self, word: &str, next: &str) {
-        let id = self.get_id(word);
-        let next_id = self.get_id(next);
+        let id = self.get_id(word).unwrap();
+        let next_id = self.get_id(next).unwrap();
 
-        self.props
-            .entry(id)
-            .and_modify(|e| MarkovChain::increment_prop(next_id, e))
-            .or_insert_with(HashMap::new)
-            .insert(next_id, 1);
+        MarkovChain::increment_prop(next_id, &mut self.props[id as usize]);
     }
 
     /// Get all the words in a oneliner.
@@ -262,9 +247,9 @@ impl MarkovChain {
         }
 
         for word in words.iter() {
-            if !self.tokens.contains_key(word) {
-                self.tokens.insert(word.to_string(), self.counter);
-                self.counter += 1;
+            if !self.tokens.contains(&word) {
+                self.tokens.push(word.clone());
+                self.props.push(HashMap::new());
             }
         }
 
