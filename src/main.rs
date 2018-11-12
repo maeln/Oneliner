@@ -43,14 +43,6 @@ fn lebytestoi32(num: [u8; 4]) -> i32 {
     unsafe { mem::transmute::<[u8; 4], i32>(num).to_le() }
 }
 
-fn float2byte(num: f32) -> [u8; 4] {
-    unsafe { mem::transmute(num.to_bits().to_le()) }
-}
-
-fn byte2float(num: [u8; 4]) -> f32 {
-    unsafe { f32::from_bits(mem::transmute::<[u8; 4], u32>(num).to_le()) }
-}
-
 #[derive(Default)]
 pub struct MarkovChain {
     pub counter: i32,
@@ -110,7 +102,6 @@ impl MarkovChain {
 
     /// Unserialized a Markov chain from a binary file.
     pub fn from_binary(path: &Path) -> Result<MarkovChain, &str> {
-        let mut counter = 0;
         let mut tokens: HashMap<String, i32> = HashMap::new();
         let mut props: HashMap<i32, HashMap<i32, i32>> = HashMap::new();
 
@@ -120,7 +111,7 @@ impl MarkovChain {
         }
         let mut file = fres.unwrap();
 
-        counter = MarkovChain::read_header(&mut file).unwrap();
+        let counter = MarkovChain::read_header(&mut file).unwrap();
         for _ in 0..counter {
             let (id, word) = MarkovChain::read_entry(&mut file).unwrap();
             tokens.insert(word, id);
@@ -193,7 +184,7 @@ impl MarkovChain {
             buff.push_str(&format!("{}: [", id));
 
             for (otherid, count) in val.iter() {
-                buff.push_str(&format!("{} -> {}, ", otherid, count));
+                buff.push_str(&format!("{} -> {}, ", otherid, *count,));
             }
 
             buff.push_str("]\n");
@@ -230,7 +221,7 @@ impl MarkovChain {
 
             for (otherid, count) in val.iter() {
                 ser.extend_from_slice(&i32tolebytes(*otherid));
-                ser.extend_from_slice(&float2byte((*count as f32) / (val.len() as f32)))
+                ser.extend_from_slice(&i32tolebytes(*count));
             }
         }
 
