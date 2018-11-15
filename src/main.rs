@@ -90,6 +90,35 @@ impl MarkovChain {
         Ok(word)
     }
 
+    fn read_pair(file: &mut File) -> Result<(i32, i32), &str> {
+        let mut buf64: [u8; 8] = [0; 8];
+        if file.read_exact(&mut buf64).is_ok() {
+            let id = lebytestoi32([buf64[0], buf64[1], buf64[2], buf64[3]]);
+            let count = lebytestoi32([buf64[4], buf64[5], buf64[6], buf64[7]]);
+            Ok((id, count))
+        } else {
+            Err("Could not read pair of i32.")
+        }
+    }
+
+    fn read_props(file: &mut File) -> Result<HashMap<i32, i32>, std::io::Error> {
+        let mut props: HashMap<i32, i32> = HashMap::new();
+        let mut buf32: [u8; 4] = [0; 4];
+        let buf_read = file.read_exact(&mut buf32);
+
+        if buf_read.is_ok() {
+            let len = lebytestoi32(buf32);
+            for _ in 0..len {
+                let (id, count) = MarkovChain::read_pair(file).unwrap();
+                props.insert(id, count);
+            }
+        } else {
+            return Err(buf_read.err().unwrap());
+        }
+
+        Ok(props)
+    }
+
     /// Unserialized a Markov chain from a binary file.
     pub fn from_binary(path: &Path) -> Result<MarkovChain, &str> {
         let mut tokens: Vec<String> = Vec::new();
@@ -105,6 +134,10 @@ impl MarkovChain {
         for _ in 0..counter {
             let word = MarkovChain::read_entry(&mut file).unwrap();
             tokens.push(word);
+        }
+
+        while let Ok(prop) = MarkovChain::read_props(&mut file) {
+            props.push(prop);
         }
 
         Ok(MarkovChain { tokens, props })
@@ -201,8 +234,7 @@ impl MarkovChain {
             ser.append(&mut bytes);
         }
 
-        for (id, val) in self.props.iter().enumerate() {
-            ser.extend_from_slice(&i32tolebytes(id as i32));
+        for val in self.props.iter() {
             ser.extend_from_slice(&i32tolebytes(val.len() as i32));
 
             for (otherid, count) in val.iter() {
