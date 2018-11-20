@@ -57,23 +57,20 @@ impl MarkovChain {
         }
     }
 
-    fn read_header(file: &mut File) -> Result<i32, ()> {
+    fn read_header(file: &mut File) -> Result<i32, String> {
         let mut buf32: [u8; 4] = [0; 4];
-        match file.read_exact(&mut buf32) {
-            Ok(_) => Ok(lebytestoi32(buf32)),
-            Err(_) => Err(()),
-        }
+        file.read_exact(&mut buf32)
+            .map_err(|e| format!("Could not read header: {}", e))?;
+        Ok(lebytestoi32(buf32))
     }
 
-    fn read_entry(file: &mut File) -> Result<String, &str> {
+    fn read_entry(file: &mut File) -> Result<String, String> {
         let mut buf8: [u8; 1] = [0; 1];
         let mut cstr: Vec<u8> = Vec::new();
         let mut reached_null = false;
         while !reached_null {
-            let idres = file.read_exact(&mut buf8);
-            if idres.is_err() {
-                return Err("Could not read entry word.");
-            }
+            file.read_exact(&mut buf8)
+                .map_err(|e| format!("Could not read entry: {}", e))?;
             if buf8[0] == 0 {
                 reached_null = true;
             } else {
@@ -81,24 +78,18 @@ impl MarkovChain {
             }
         }
 
-        let resword = String::from_utf8(cstr);
-        if resword.is_err() {
-            return Err("Unable to convert word to UTF-8.");
-        }
-        let word = resword.unwrap();
-
-        Ok(word)
+        let resword = String::from_utf8(cstr)
+            .map_err(|e| format!("Could not convert entry to string: {}", e))?;
+        Ok(resword)
     }
 
-    fn read_pair(file: &mut File) -> Result<(i32, i32), &str> {
+    fn read_pair(file: &mut File) -> Result<(i32, i32), String> {
         let mut buf64: [u8; 8] = [0; 8];
-        if file.read_exact(&mut buf64).is_ok() {
-            let id = lebytestoi32([buf64[0], buf64[1], buf64[2], buf64[3]]);
-            let count = lebytestoi32([buf64[4], buf64[5], buf64[6], buf64[7]]);
-            Ok((id, count))
-        } else {
-            Err("Could not read pair of i32.")
-        }
+        file.read_exact(&mut buf64)
+            .map_err(|e| format!("Could not read pair of i32: {}", e))?;
+        let id = lebytestoi32([buf64[0], buf64[1], buf64[2], buf64[3]]);
+        let count = lebytestoi32([buf64[4], buf64[5], buf64[6], buf64[7]]);
+        Ok((id, count))
     }
 
     fn read_props(file: &mut File) -> Result<HashMap<i32, i32>, std::io::Error> {
@@ -120,16 +111,12 @@ impl MarkovChain {
     }
 
     /// Unserialized a Markov chain from a binary file.
-    pub fn from_binary(path: &Path) -> Result<MarkovChain, &str> {
+    pub fn from_binary(path: &Path) -> Result<MarkovChain, String> {
         let mut tokens: Vec<String> = Vec::new();
         let mut props: Vec<HashMap<i32, i32>> = Vec::new();
 
-        let fres = File::open(path);
-        if fres.is_err() {
-            return Err("Impossible to open file");
-        }
-        let mut file = fres.unwrap();
-
+        let mut file = File::open(path)
+            .map_err(|e| format!("Could not open file {} : {}", path.to_str().unwrap(), e))?;
         let counter = MarkovChain::read_header(&mut file).unwrap();
         for _ in 0..counter {
             let word = MarkovChain::read_entry(&mut file).unwrap();
