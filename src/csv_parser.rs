@@ -56,16 +56,23 @@ fn get_words(chain: &mut MarkovChain, line: &str) {
         words.push(cap[0].to_string());
     }
 
-    for word in words.iter() {
-        if !chain.tokens.contains(&word) {
-            chain.tokens.push(word.clone());
+    for i in 0..words.len() {
+        if !chain.tokens.contains(&words[i]) {
+            chain.tokens.push(words[i].clone());
             chain.props.push(HashMap::new());
         }
-    }
 
-    for i in 0..words.len() {
-        if i < (words.len() - 1) {
-            chain.add_props(&words[i], &words[i + 1]);
+        let id = (chain.tokens.len() - 1) as i32;
+        if i == 0 && !chain.start.contains(&id) {
+            chain.start.push(id);
+        }
+
+        if i == (words.len() - 1) && !chain.end.contains(&id) {
+            chain.end.push(id);
+        }
+
+        if i > 0 {
+            chain.add_props(&words[i - 1], &words[i]);
         }
     }
 }

@@ -11,12 +11,16 @@ use serialize;
 pub struct MarkovChain {
     pub tokens: Vec<String>,
     pub props: Vec<HashMap<i32, i32>>,
+    pub start: Vec<i32>,
+    pub end: Vec<i32>,
 }
 
 impl MarkovChain {
     pub fn new() -> MarkovChain {
         MarkovChain {
             tokens: Vec::new(),
+            start: Vec::new(),
+            end: Vec::new(),
             props: Vec::new(),
         }
     }
@@ -79,6 +83,10 @@ impl MarkovChain {
         let mut tokens: Vec<String> = Vec::new();
         let mut props: Vec<HashMap<i32, i32>> = Vec::new();
 
+        // TODO: Handle the start and end.
+        let start: Vec<i32> = Vec::new();
+        let end: Vec<i32> = Vec::new();
+
         let mut file = File::open(path)
             .map_err(|e| format!("Could not open file {} : {}", path.to_str().unwrap(), e))?;
         let counter = MarkovChain::read_header(&mut file).unwrap();
@@ -91,7 +99,12 @@ impl MarkovChain {
             props.push(prop);
         }
 
-        Ok(MarkovChain { tokens, props })
+        Ok(MarkovChain {
+            tokens,
+            props,
+            start,
+            end,
+        })
     }
 
     /// Save a plain text version of the markov chain data into a file.
@@ -111,6 +124,18 @@ impl MarkovChain {
             buff.push_str(&format!("{};", word));
         }
         buff.push_str("\n");
+
+        buff.push_str("start: [");
+        for word in self.start.iter() {
+            buff.push_str(&format!("{}, ", word));
+        }
+        buff.push_str("]\n");
+
+        buff.push_str("end: [");
+        for word in self.end.iter() {
+            buff.push_str(&format!("{}, ", word));
+        }
+        buff.push_str("]\n");
 
         for (id, val) in self.props.iter().enumerate() {
             buff.push_str(&format!("{}: [", id));
