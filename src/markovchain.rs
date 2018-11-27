@@ -51,6 +51,21 @@ impl MarkovChain {
         Ok(resword)
     }
 
+    fn read_array(file: &mut File) -> Result<Vec<i32>, String> {
+        let mut buf32: [u8; 4] = [0; 4];
+        file.read_exact(&mut buf32)
+            .map_err(|e| format!("Could not read array size: {}", e))?;
+        let size: i32 = serialize::lebytestoi32(buf32);
+        let mut arr: Vec<i32> = Vec::with_capacity(size as usize);
+        for i in 0..size {
+            file.read_exact(&mut buf32)
+                .map_err(|e| format!("Could not read array item at position {}: {}", i, e))?;
+            arr.push(serialize::lebytestoi32(buf32));
+        }
+
+        Ok(arr)
+    }
+
     fn read_pair(file: &mut File) -> Result<(i32, i32), String> {
         let mut buf64: [u8; 8] = [0; 8];
         file.read_exact(&mut buf64)
@@ -83,10 +98,6 @@ impl MarkovChain {
         let mut tokens: Vec<String> = Vec::new();
         let mut props: Vec<HashMap<i32, i32>> = Vec::new();
 
-        // TODO: Handle the start and end.
-        let start: Vec<i32> = Vec::new();
-        let end: Vec<i32> = Vec::new();
-
         let mut file = File::open(path)
             .map_err(|e| format!("Could not open file {} : {}", path.to_str().unwrap(), e))?;
         let counter = MarkovChain::read_header(&mut file).unwrap();
@@ -94,6 +105,9 @@ impl MarkovChain {
             let word = MarkovChain::read_entry(&mut file).unwrap();
             tokens.push(word);
         }
+
+        let start: Vec<i32> = MarkovChain::read_array(&mut file).unwrap();
+        let end: Vec<i32> = MarkovChain::read_array(&mut file).unwrap();
 
         while let Ok(prop) = MarkovChain::read_props(&mut file) {
             props.push(prop);
@@ -165,6 +179,12 @@ impl MarkovChain {
         let mut ser: Vec<u8> = Vec::new();
         ser.extend(&serialize::i32tolebytes(words_count));
         ser.extend(serialize::string_list_to_bytes(&self.tokens));
+
+        ser.extend(&serialize::i32tolebytes(self.start.len() as i32));
+        ser.extend(&serialize::i32_list_to_bytes(&self.start));
+
+        ser.extend(&serialize::i32tolebytes(self.end.len() as i32));
+        ser.extend(&serialize::i32_list_to_bytes(&self.end));
 
         for val in self.props.iter() {
             ser.extend(&serialize::i32tolebytes(val.len() as i32));

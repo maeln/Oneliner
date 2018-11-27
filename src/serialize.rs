@@ -24,6 +24,14 @@ pub fn string_list_to_bytes(strings: &[String]) -> Vec<u8> {
     bytes
 }
 
+pub fn i32_list_to_bytes(integers: &[i32]) -> Vec<u8> {
+    let mut bytes: Vec<u8> = Vec::with_capacity(integers.len() * 4);
+    for i in integers.iter() {
+        bytes.extend(&i32tolebytes(*i));
+    }
+    bytes
+}
+
 pub fn i32_hash_to_bytes(hash: &HashMap<i32, i32>) -> Vec<u8> {
     let mut bytes: Vec<u8> = Vec::new();
     for (key, val) in hash.iter() {

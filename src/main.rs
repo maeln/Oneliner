@@ -1,3 +1,4 @@
+extern crate clap;
 extern crate csv;
 extern crate regex;
 
@@ -5,10 +6,22 @@ mod csv_parser;
 mod markovchain;
 mod serialize;
 
+use clap::{App, Arg};
 use std::path::Path;
 
 fn main() {
-    let path = Path::new("test.csv");
+    let matches = App::new("Oneliner")
+        .version("0.1a")
+        .author("Maeln <contact@maeln.com>")
+        .arg(
+            Arg::with_name("CSV_FILE")
+                .help("CSV file to use.")
+                .required(true)
+                .index(1),
+        )
+        .get_matches();
+
+    let path = Path::new(matches.value_of("CSV_FILE").unwrap());
     let bin_path = Path::new("words.b");
     let txt_path = Path::new("words.txt");
     let cmp_path = Path::new("comp.txt");
