@@ -10,5 +10,4 @@ opt-level = 3
 
 [dependencies]
 csv = "1"
-regex = "1"
 clap = "2.32"

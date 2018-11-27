@@ -1,7 +1,6 @@
 use csv::ReaderBuilder;
 
 use markovchain::MarkovChain;
-use regex::Regex;
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
@@ -10,8 +9,6 @@ use std::path::Path;
 pub fn parse_file(path: &Path) -> MarkovChain {
     let fname = path.display();
     let mut chain = MarkovChain::new();
-
-    println!("Parsing '{}'", fname);
 
     let file = match File::open(&path) {
         Err(why) => panic!("{} couldn't be read: {}", fname, why),
@@ -43,22 +40,17 @@ pub fn parse_file(path: &Path) -> MarkovChain {
         }
     }
 
-    println!("Finished parsing.");
-
     chain
 }
 
 /// Get all the words in a oneliner.
 fn get_words(chain: &mut MarkovChain, line: &str) {
-    let mut words: Vec<String> = Vec::new();
-    let re = Regex::new(r"\w+").unwrap();
-    for cap in re.captures_iter(line) {
-        words.push(cap[0].to_string());
-    }
-
+    let words: Vec<&str> = line.split_whitespace().collect();
     for i in 0..words.len() {
-        if !chain.tokens.contains(&words[i]) {
-            chain.tokens.push(words[i].clone());
+        let word = words[i].to_string();
+
+        if !chain.tokens.contains(&word) {
+            chain.tokens.push(word.clone());
             chain.props.push(HashMap::new());
         }
 
