@@ -4,10 +4,11 @@ version = "0.1.0"
 authors = ["Maël <contact@maeln.com>"]
 
 [profile.release]
-debug = false
-lto = true
+debug = true
+#lto = true
 opt-level = 3
 
 [dependencies]
-csv = "1"
+csv = "1.0.2"
 clap = "2.32"
+crossbeam = "0.5.0"

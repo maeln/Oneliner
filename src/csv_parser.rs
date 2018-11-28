@@ -1,3 +1,5 @@
+extern crate crossbeam;
+
 use csv::ReaderBuilder;
 
 use markovchain::MarkovChain;
@@ -5,10 +7,20 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
 
-/// Parse a oneliner CSV and make it into a markov chain.
-pub fn parse_file(path: &Path) -> MarkovChain {
+use std::time::Instant;
+
+fn get_fract_s(date: Instant) -> String {
+    let duration = date.elapsed();
+    format!("{}.{:0>3}", duration.as_secs(), duration.subsec_millis())
+}
+
+/// Make a corpus from the CSV
+pub fn csv_to_corpus(path: &Path) -> Vec<String> {
     let fname = path.display();
-    let mut chain = MarkovChain::new();
+    let mut corpus: Vec<String> = Vec::new();
+
+    println!("Reading the CSV... ");
+    let now = Instant::now();
 
     let file = match File::open(&path) {
         Err(why) => panic!("{} couldn't be read: {}", fname, why),
@@ -34,10 +46,57 @@ pub fn parse_file(path: &Path) -> MarkovChain {
                         line.push_str(sentence);
                     }
                 }
-                line = clean_line(&line);
-                get_words(&mut chain, &line);
+                corpus.push(line);
             }
         }
+    }
+
+    println!("CSV file read in {}", get_fract_s(now));
+
+    corpus
+}
+
+/// Clean a corpus
+pub fn clean_corpus(corpus: &mut [String]) {
+    println!("Cleaning the corpus... ");
+    let now = Instant::now();
+
+    // Number of thread to use. TODO: Should be determined at runtime.
+    let thread_num = 4;
+
+    // Divide the corpus by the number of thread
+    let dist = corpus.len() / thread_num;
+
+    let res = crossbeam::scope(|scope| {
+        for slice in corpus.chunks_mut(dist) {
+            scope.spawn(move |_| {
+                for line in slice.iter_mut() {
+                    let cl = clean_line(line);
+                    if url_filter(&cl) {
+                        *line = "".to_string();
+                    } else {
+                        *line = cl;
+                    }
+                }
+            });
+        }
+    });
+
+    if res.is_err() {
+        panic!("Could not parse corpus.");
+    }
+
+    println!("Corpus cleaned in {}", get_fract_s(now));
+}
+
+/// Parse a oneliner CSV and make it into a markov chain.
+pub fn parse_file(path: &Path) -> MarkovChain {
+    let mut chain = MarkovChain::new();
+
+    let mut corpus = csv_to_corpus(path);
+    clean_corpus(&mut corpus);
+    for line in corpus.iter() {
+        get_words(&mut chain, &line);
     }
 
     chain
@@ -71,5 +130,10 @@ fn get_words(chain: &mut MarkovChain, line: &str) {
 
 /// Clean the text of a line.
 fn clean_line(line: &str) -> String {
-    line.to_lowercase()
+    line.to_lowercase().trim().to_string().replace("\0", "")
+}
+
+/// Filters
+fn url_filter(line: &str) -> bool {
+    line.contains("http://") || line.contains("https://")
 }

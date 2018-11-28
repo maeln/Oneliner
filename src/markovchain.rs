@@ -57,6 +57,7 @@ impl MarkovChain {
             .map_err(|e| format!("Could not read array size: {}", e))?;
         let size: i32 = serialize::lebytestoi32(buf32);
         let mut arr: Vec<i32> = Vec::with_capacity(size as usize);
+        println!("Array size: {}", size);
         for i in 0..size {
             file.read_exact(&mut buf32)
                 .map_err(|e| format!("Could not read array item at position {}: {}", i, e))?;
@@ -180,9 +181,11 @@ impl MarkovChain {
         ser.extend(&serialize::i32tolebytes(words_count));
         ser.extend(serialize::string_list_to_bytes(&self.tokens));
 
+        println!("Imma write {}", self.start.len() as i32);
         ser.extend(&serialize::i32tolebytes(self.start.len() as i32));
         ser.extend(&serialize::i32_list_to_bytes(&self.start));
 
+        println!("Imma write {}", self.end.len() as i32);
         ser.extend(&serialize::i32tolebytes(self.end.len() as i32));
         ser.extend(&serialize::i32_list_to_bytes(&self.end));
 
