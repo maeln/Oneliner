@@ -1,11 +1,12 @@
 extern crate clap;
 extern crate csv;
+extern crate rand;
 
 mod csv_parser;
 mod markovchain;
 mod serialize;
 
-use clap::{App, Arg};
+use clap::{App, Arg, SubCommand};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -18,66 +19,82 @@ fn main() {
     let matches = App::new("Oneliner")
         .version("0.1a")
         .author("Maeln <contact@maeln.com>")
-        .arg(
-            Arg::with_name("CSV_FILE")
-                .help("CSV file to use.")
-                .required(true)
-                .index(1),
+        .subcommand(
+            SubCommand::with_name("parse")
+                .arg(
+                    Arg::with_name("CSV_FILE")
+                        .help("CSV file to use.")
+                        .required(true)
+                        .index(1),
+                )
+                .arg(
+                    Arg::with_name("OUTPUT")
+                        .help("Output file.")
+                        .required(true)
+                        .index(2),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("generate")
+                .arg(
+                    Arg::with_name("BIN_FILE")
+                        .help("Markovchain binary file.")
+                        .required(true)
+                        .index(1),
+                )
+                .arg(
+                    Arg::with_name("ONELINER_NUM")
+                        .help("Number of oneliner to generate.")
+                        .required(true)
+                        .index(2),
+                ),
         )
         .get_matches();
 
-    let path = Path::new(matches.value_of("CSV_FILE").unwrap());
-    let bin_path = Path::new("words.b");
-    let txt_path = Path::new("words.txt");
-    let cmp_path = Path::new("comp.txt");
+    if let Some(sub_matches) = matches.subcommand_matches("parse") {
+        let path = Path::new(sub_matches.value_of("CSV_FILE").unwrap());
+        let bin_path = Path::new(sub_matches.value_of("OUTPUT").unwrap());
 
-    println!("Starting to parse {}", path.to_str().unwrap());
-    let mut now = Instant::now();
-    let mkc = csv_parser::parse_file(path);
-    println!("Parsed in {}s", get_fract_s(now),);
+        let mut now = Instant::now();
+        let mkc = csv_parser::parse_file(path);
+        println!("Parsed in {}s", get_fract_s(now),);
 
-    now = Instant::now();
-    if mkc.save_binary(bin_path).is_err() {
-        panic!("Could not save binary");
-    } else {
-        println!(
-            "Binary serialized in {}s in file: {}",
-            get_fract_s(now),
-            bin_path.to_str().unwrap()
-        );
+        now = Instant::now();
+        if mkc.save_binary(bin_path).is_err() {
+            panic!("Could not save binary");
+        } else {
+            println!(
+                "Binary serialized in {}s in file: {}",
+                get_fract_s(now),
+                bin_path.to_str().unwrap()
+            );
+        }
     }
 
-    now = Instant::now();
-    if mkc.save_txt(txt_path).is_err() {
-        panic!("Could not save the txt");
-    } else {
-        println!(
-            "Text serialized in {}s in file: {}",
-            get_fract_s(now),
-            txt_path.to_str().unwrap()
-        );
-    }
+    if let Some(sub_matches) = matches.subcommand_matches("generate") {
+        let bin_path = Path::new(sub_matches.value_of("BIN_FILE").unwrap());
+        let num: usize = sub_matches
+            .value_of("ONELINER_NUM")
+            .unwrap()
+            .parse()
+            .unwrap();
 
-    now = Instant::now();
-    let mkc2 = markovchain::MarkovChain::from_binary(bin_path);
-    if mkc2.is_err() {
-        panic!("Could not load unserialized txt");
-    } else {
-        println!(
-            "Unserialized binary from {} in {}s",
-            bin_path.to_str().unwrap(),
-            get_fract_s(now),
-        );
-    }
+        let now = Instant::now();
+        let mkc2 = markovchain::MarkovChain::from_binary(bin_path);
+        if mkc2.is_err() {
+            panic!("Could not load unserialized txt");
+        } else {
+            println!(
+                "Unserialized binary from {} in {}s",
+                bin_path.to_str().unwrap(),
+                get_fract_s(now),
+            );
+        }
+        let mkc = mkc2.unwrap();
 
-    now = Instant::now();
-    if mkc2.unwrap().save_txt(cmp_path).is_err() {
-        panic!("Could not save unserialized txt");
-    } else {
-        println!(
-            "Text serialized in {}s in file: {}",
-            get_fract_s(now),
-            cmp_path.to_str().unwrap()
-        );
+        for _ in 0..num {
+            println!("{}", mkc.generate());
+            println!("--------------------------------------------------")
+        }
     }
 }

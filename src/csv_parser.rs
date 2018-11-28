@@ -135,5 +135,5 @@ fn clean_line(line: &str) -> String {
 
 /// Filters
 fn url_filter(line: &str) -> bool {
-    line.contains("http://") || line.contains("https://")
+    line.contains("http://") || line.contains("https://") || line.contains("www.")
 }

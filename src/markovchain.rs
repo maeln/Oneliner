@@ -1,3 +1,5 @@
+use rand::prelude::*;
+
 use std::collections::HashMap;
 
 use std::fs::File;
@@ -23,6 +25,40 @@ impl MarkovChain {
             end: Vec::new(),
             props: Vec::new(),
         }
+    }
+
+    fn pick_next(&self, token: usize) -> Option<usize> {
+        let prob = &self.props[token];
+        if prob.len() == 0 {
+            return None;
+        }
+
+        let mut rng = rand::thread_rng();
+        let mut probvec: Vec<(i32, i32)> = Vec::new();
+        for (k, v) in prob.iter() {
+            probvec.push((k.clone(), v.clone()));
+        }
+
+        Some(probvec.choose_weighted(&mut rng, |item| item.1).unwrap().0 as usize)
+    }
+
+    pub fn generate(&self) -> String {
+        let mut buff = String::new();
+        let mut rng = rand::thread_rng();
+
+        let mut current = self.start.choose(&mut rng).unwrap().clone() as usize;
+        buff.push_str(&self.tokens[current]);
+        while buff.len() < 330 {
+            let next_id = self.pick_next(current);
+            if next_id.is_none() {
+                break;
+            }
+
+            current = next_id.unwrap();
+            buff.push_str(&format!(" {}", &self.tokens[current]));
+        }
+
+        buff
     }
 
     fn read_header(file: &mut File) -> Result<i32, String> {
