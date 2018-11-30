@@ -8,8 +8,7 @@ use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 
-use serialize;
-use serialize::Serializable;
+use serialize::{Serializable, Unserializable};
 
 #[derive(Default)]
 pub struct MarkovChain {
@@ -109,31 +108,16 @@ impl MarkovChain {
         Ok(arr)
     }
 
-    fn read_pair(file: &mut File) -> Result<(i32, i32), String> {
-        let mut buf64: [u8; 8] = [0; 8];
-        file.read_exact(&mut buf64)
-            .map_err(|e| format!("Could not read pair of i32: {}", e))?;
-        let id = i32::unserialize(&buf64[0..4]);
-        let count = i32::unserialize(&buf64[4..8]);
-        Ok((id, count))
-    }
-
     fn read_props(file: &mut File) -> Result<HashMap<i32, i32>, std::io::Error> {
-        let mut props: HashMap<i32, i32> = HashMap::new();
         let mut buf32: [u8; 4] = [0; 4];
-        let buf_read = file.read_exact(&mut buf32);
+        file.read_exact(&mut buf32)?;
 
-        if buf_read.is_ok() {
-            let len = i32::unserialize(&buf32);
-            for _ in 0..len {
-                let (id, count) = MarkovChain::read_pair(file).unwrap();
-                props.insert(id, count);
-            }
-        } else {
-            return Err(buf_read.err().unwrap());
-        }
+        let len: usize = i32::unserialize(&buf32) as usize;
+        let mut buf: Vec<u8> = vec![0; len * 4 * 2];
+        file.read_exact(&mut buf)?;
 
-        Ok(props)
+        let map: HashMap<i32, i32> = HashMap::unserialize(&buf);
+        Ok(map)
     }
 
     /// Unserialized a Markov chain from a binary file.
@@ -221,7 +205,7 @@ impl MarkovChain {
         let words_count: i32 = self.tokens.len() as i32;
         let mut ser: Vec<u8> = Vec::new();
         ser.extend(&words_count.serialize());
-        ser.extend(serialize::string_list_to_bytes(&self.tokens));
+        ser.extend(&self.tokens.serialize());
 
         ser.extend(&(self.start.len() as i32).serialize());
         ser.extend(&self.start.serialize());
@@ -230,7 +214,7 @@ impl MarkovChain {
 
         for val in self.props.iter() {
             ser.extend(&(val.len() as i32).serialize());
-            ser.extend(serialize::i32_hash_to_bytes(&val));
+            ser.extend(&val.serialize());
         }
 
         ser
