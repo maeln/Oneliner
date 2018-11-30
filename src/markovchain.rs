@@ -9,6 +9,7 @@ use std::io::Write;
 use std::path::Path;
 
 use serialize;
+use serialize::Serializable;
 
 #[derive(Default)]
 pub struct MarkovChain {
@@ -221,16 +222,16 @@ impl MarkovChain {
     pub fn binary_serialize(&self) -> Vec<u8> {
         let words_count: i32 = self.tokens.len() as i32;
         let mut ser: Vec<u8> = Vec::new();
-        ser.extend(&serialize::i32tolebytes(words_count));
+        ser.extend(&words_count.serialize());
         ser.extend(serialize::string_list_to_bytes(&self.tokens));
 
-        ser.extend(&serialize::i32tolebytes(self.start.len() as i32));
+        ser.extend(&(self.start.len() as i32).serialize());
         ser.extend(&serialize::i32_list_to_bytes(&self.start));
-        ser.extend(&serialize::i32tolebytes(self.end.len() as i32));
+        ser.extend(&(self.end.len() as i32).serialize());
         ser.extend(&serialize::i32_list_to_bytes(&self.end));
 
         for val in self.props.iter() {
-            ser.extend(&serialize::i32tolebytes(val.len() as i32));
+            ser.extend(&(val.len() as i32).serialize());
             ser.extend(serialize::i32_hash_to_bytes(&val));
         }
 

@@ -58,6 +58,23 @@ fn main() {
                         .index(2),
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("convert")
+                .arg(
+                    Arg::with_name("input")
+                        .help("input binary file.")
+                        .short("-i")
+                        .takes_value(true)
+                        .required(true),
+                )
+                .arg(
+                    Arg::with_name("output")
+                        .help("Output text file.")
+                        .short("-o")
+                        .takes_value(true)
+                        .required(true),
+                ),
+        )
         .get_matches();
 
     if let Some(sub_matches) = matches.subcommand_matches("parse") {
@@ -117,6 +134,37 @@ fn main() {
         for _ in 0..num {
             println!("{}", mkc.generate());
             println!("--------------------------------------------------")
+        }
+    }
+
+    if let Some(sub_matches) = matches.subcommand_matches("convert") {
+        let bin_path = Path::new(sub_matches.value_of("input").unwrap());
+        let text_path = Path::new(sub_matches.value_of("output").unwrap());
+
+        let mut now = Instant::now();
+        let mkc2 = markovchain::MarkovChain::from_binary(bin_path);
+        if mkc2.is_err() {
+            panic!("Could not load unserialized txt");
+        } else {
+            println!(
+                "Unserialized binary from {} in {}s",
+                bin_path.to_str().unwrap(),
+                get_fract_s(now),
+            );
+        }
+        let mkc = mkc2.unwrap();
+
+        now = Instant::now();
+        let wrt_state = mkc.save_txt(text_path);
+        if wrt_state.is_err() {
+            panic!("Could serialize txt");
+        } else {
+            println!(
+                "Serialize {} to {} in {}s",
+                bin_path.to_str().unwrap(),
+                text_path.to_str().unwrap(),
+                get_fract_s(now),
+            );
         }
     }
 }
