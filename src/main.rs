@@ -1,6 +1,10 @@
+#[macro_use]
+extern crate lazy_static;
 extern crate clap;
+extern crate crossbeam;
 extern crate csv;
 extern crate rand;
+extern crate regex;
 
 mod csv_parser;
 mod markovchain;
@@ -21,6 +25,11 @@ fn main() {
         .author("Maeln <contact@maeln.com>")
         .subcommand(
             SubCommand::with_name("parse")
+                .arg(
+                    Arg::with_name("text")
+                        .short("t")
+                        .help("Export to a text file instead of binary."),
+                )
                 .arg(
                     Arg::with_name("CSV_FILE")
                         .help("CSV file to use.")
@@ -54,20 +63,33 @@ fn main() {
     if let Some(sub_matches) = matches.subcommand_matches("parse") {
         let path = Path::new(sub_matches.value_of("CSV_FILE").unwrap());
         let bin_path = Path::new(sub_matches.value_of("OUTPUT").unwrap());
+        let to_text = sub_matches.is_present("text");
 
         let mut now = Instant::now();
         let mkc = csv_parser::parse_file(path);
         println!("Parsed in {}s", get_fract_s(now),);
 
         now = Instant::now();
-        if mkc.save_binary(bin_path).is_err() {
-            panic!("Could not save binary");
+        if to_text {
+            if mkc.save_txt(bin_path).is_err() {
+                panic!("Could not save text file");
+            } else {
+                println!(
+                    "Markovchain serialized in {}s in file: {}",
+                    get_fract_s(now),
+                    bin_path.to_str().unwrap()
+                );
+            }
         } else {
-            println!(
-                "Binary serialized in {}s in file: {}",
-                get_fract_s(now),
-                bin_path.to_str().unwrap()
-            );
+            if mkc.save_binary(bin_path).is_err() {
+                panic!("Could not save binary");
+            } else {
+                println!(
+                    "Binary serialized in {}s in file: {}",
+                    get_fract_s(now),
+                    bin_path.to_str().unwrap()
+                );
+            }
         }
     }
 

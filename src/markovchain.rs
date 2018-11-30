@@ -2,6 +2,7 @@ use rand::prelude::*;
 
 use std::collections::HashMap;
 
+use regex::Regex;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
@@ -43,6 +44,10 @@ impl MarkovChain {
     }
 
     pub fn generate(&self) -> String {
+        lazy_static! {
+            static ref end: Regex = Regex::new(r"[;:,\.!\?]+").unwrap();
+        }
+
         let mut buff = String::new();
         let mut rng = rand::thread_rng();
 
@@ -55,7 +60,10 @@ impl MarkovChain {
             }
 
             current = next_id.unwrap();
-            buff.push_str(&format!(" {}", &self.tokens[current]));
+            if !end.is_match(&self.tokens[current]) {
+                buff.push_str(" ");
+            }
+            buff.push_str(&self.tokens[current]);
         }
 
         buff

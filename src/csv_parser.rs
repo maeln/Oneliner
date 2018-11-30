@@ -1,6 +1,5 @@
-extern crate crossbeam;
-
 use csv::ReaderBuilder;
+use regex::Regex;
 
 use markovchain::MarkovChain;
 use std::collections::HashMap;
@@ -71,11 +70,10 @@ pub fn clean_corpus(corpus: &mut [String]) {
         for slice in corpus.chunks_mut(dist) {
             scope.spawn(move |_| {
                 for line in slice.iter_mut() {
-                    let cl = clean_line(line);
-                    if url_filter(&cl) {
+                    if filter_line(line) {
                         *line = "".to_string();
                     } else {
-                        *line = cl;
+                        *line = clean_line(line);
                     }
                 }
             });
@@ -104,9 +102,12 @@ pub fn parse_file(path: &Path) -> MarkovChain {
 
 /// Get all the words in a oneliner.
 fn get_words(chain: &mut MarkovChain, line: &str) {
-    let words: Vec<&str> = line.split_whitespace().collect();
+    lazy_static! {
+        static ref split_word_re: Regex = Regex::new(r"\s+").unwrap();
+    }
+    let words: Vec<&str> = split_word_re.split(line).collect();
     for i in 0..words.len() {
-        let word = words[i].to_string();
+        let word = words[i].trim().to_string();
 
         if !chain.tokens.contains(&word) {
             chain.tokens.push(word.clone());
@@ -130,10 +131,47 @@ fn get_words(chain: &mut MarkovChain, line: &str) {
 
 /// Clean the text of a line.
 fn clean_line(line: &str) -> String {
-    line.to_lowercase().trim().to_string().replace("\0", "")
+    lazy_static! {
+        static ref multiple_ponct: Regex = Regex::new(r"(?P<unspaced>[;:\.!\?]+)").unwrap();
+    }
+
+    let cleaned_line = line.to_lowercase().trim().to_string().replace("\0", "");
+    let rm_mlponct = multiple_ponct.replace_all(&cleaned_line, " $unspaced ");
+
+    rm_mlponct.to_string()
 }
 
 /// Filters
+fn filter_line(line: &str) -> bool {
+    url_filter(line) || no_char_filter(line) || no_hashtag_bullshit(line) || ascii_filter(line)
+}
+
+/// Only accept ascii strings
+fn ascii_filter(line: &str) -> bool {
+    !line.is_ascii()
+}
+
+/// Filters oneliner containing urls
 fn url_filter(line: &str) -> bool {
-    line.contains("http://") || line.contains("https://") || line.contains("www.")
+    lazy_static! {
+        static ref url_reg: Regex = Regex::new(r"(.+://.+\.[a-z]+.*$)|(.*www\..*)").unwrap();
+    }
+    url_reg.is_match(line)
+}
+
+/// Filters oneliner that don't contain any [a-Z] char.
+fn no_char_filter(line: &str) -> bool {
+    lazy_static! {
+        static ref char_reg: Regex = Regex::new(r".*[a-zA-Z]+.*").unwrap();
+    }
+    !char_reg.is_match(line)
+}
+
+/// Filter ### bullshit
+fn no_hashtag_bullshit(line: &str) -> bool {
+    lazy_static! {
+        static ref bull_reg: Regex = Regex::new(r"^#+").unwrap();
+    }
+
+    bull_reg.is_match(line)
 }
