@@ -19,12 +19,21 @@ impl Serializable for i32 {
     }
 }
 
-pub fn i32tolebytes(num: i32) -> [u8; 4] {
-    unsafe { mem::transmute(num.to_le()) }
-}
+impl<T: Serializable + Sized> Serializable for Vec<T> {
+    fn serialize(&self) -> Vec<u8> {
+        let mut bytes: Vec<u8> = Vec::with_capacity(self.len() * mem::size_of::<T>());
+        for i in self.iter() {
+            bytes.extend(&i.serialize());
+        }
+        bytes
+    }
 
-pub fn lebytestoi32(num: [u8; 4]) -> i32 {
-    unsafe { mem::transmute::<[u8; 4], i32>(num).to_le() }
+    fn unserialize(bytes: &[u8]) -> Vec<T> {
+        bytes
+            .chunks(mem::size_of::<T>())
+            .map(|chunk| T::unserialize(chunk))
+            .collect()
+    }
 }
 
 pub fn string_to_bytes(string: &str) -> Vec<u8> {
@@ -42,19 +51,11 @@ pub fn string_list_to_bytes(strings: &[String]) -> Vec<u8> {
     bytes
 }
 
-pub fn i32_list_to_bytes(integers: &[i32]) -> Vec<u8> {
-    let mut bytes: Vec<u8> = Vec::with_capacity(integers.len() * 4);
-    for i in integers.iter() {
-        bytes.extend(&i32tolebytes(*i));
-    }
-    bytes
-}
-
 pub fn i32_hash_to_bytes(hash: &HashMap<i32, i32>) -> Vec<u8> {
     let mut bytes: Vec<u8> = Vec::new();
     for (key, val) in hash.iter() {
-        bytes.extend(&i32tolebytes(*key));
-        bytes.extend(&i32tolebytes(*val));
+        bytes.extend(&key.serialize());
+        bytes.extend(&val.serialize());
     }
     bytes
 }

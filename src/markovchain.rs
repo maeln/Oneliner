@@ -74,7 +74,7 @@ impl MarkovChain {
         let mut buf32: [u8; 4] = [0; 4];
         file.read_exact(&mut buf32)
             .map_err(|e| format!("Could not read header: {}", e))?;
-        Ok(serialize::lebytestoi32(buf32))
+        Ok(i32::unserialize(&buf32))
     }
 
     fn read_entry(file: &mut File) -> Result<String, String> {
@@ -100,13 +100,11 @@ impl MarkovChain {
         let mut buf32: [u8; 4] = [0; 4];
         file.read_exact(&mut buf32)
             .map_err(|e| format!("Could not read array size: {}", e))?;
-        let size: i32 = serialize::lebytestoi32(buf32);
-        let mut arr: Vec<i32> = Vec::with_capacity(size as usize);
-        for i in 0..size {
-            file.read_exact(&mut buf32)
-                .map_err(|e| format!("Could not read array item at position {}: {}", i, e))?;
-            arr.push(serialize::lebytestoi32(buf32));
-        }
+        let size: usize = i32::unserialize(&buf32) as usize;
+        let mut array_buffer: Vec<u8> = vec![0; size * 4];
+        file.read_exact(&mut array_buffer)
+            .map_err(|e| format!("Could not read array: {}", e))?;
+        let arr: Vec<i32> = Vec::unserialize(&array_buffer);
 
         Ok(arr)
     }
@@ -115,8 +113,8 @@ impl MarkovChain {
         let mut buf64: [u8; 8] = [0; 8];
         file.read_exact(&mut buf64)
             .map_err(|e| format!("Could not read pair of i32: {}", e))?;
-        let id = serialize::lebytestoi32([buf64[0], buf64[1], buf64[2], buf64[3]]);
-        let count = serialize::lebytestoi32([buf64[4], buf64[5], buf64[6], buf64[7]]);
+        let id = i32::unserialize(&buf64[0..4]);
+        let count = i32::unserialize(&buf64[4..8]);
         Ok((id, count))
     }
 
@@ -126,7 +124,7 @@ impl MarkovChain {
         let buf_read = file.read_exact(&mut buf32);
 
         if buf_read.is_ok() {
-            let len = serialize::lebytestoi32(buf32);
+            let len = i32::unserialize(&buf32);
             for _ in 0..len {
                 let (id, count) = MarkovChain::read_pair(file).unwrap();
                 props.insert(id, count);
@@ -226,9 +224,9 @@ impl MarkovChain {
         ser.extend(serialize::string_list_to_bytes(&self.tokens));
 
         ser.extend(&(self.start.len() as i32).serialize());
-        ser.extend(&serialize::i32_list_to_bytes(&self.start));
+        ser.extend(&self.start.serialize());
         ser.extend(&(self.end.len() as i32).serialize());
-        ser.extend(&serialize::i32_list_to_bytes(&self.end));
+        ser.extend(&self.end.serialize());
 
         for val in self.props.iter() {
             ser.extend(&(val.len() as i32).serialize());
