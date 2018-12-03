@@ -8,6 +8,7 @@ use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 
+use serialize::errors::{Error, Result};
 use serialize::{Serializable, Unserializable};
 
 #[derive(Default)]
@@ -69,20 +70,18 @@ impl MarkovChain {
         buff
     }
 
-    fn read_header(file: &mut File) -> Result<i32, String> {
+    fn read_header(file: &mut File) -> Result<i32> {
         let mut buf32: [u8; 4] = [0; 4];
-        file.read_exact(&mut buf32)
-            .map_err(|e| format!("Could not read header: {}", e))?;
-        Ok(i32::unserialize(&buf32))
+        file.read_exact(&mut buf32)?;
+        i32::unserialize(&buf32)
     }
 
-    fn read_entry(file: &mut File) -> Result<String, String> {
+    fn read_entry(file: &mut File) -> Result<String> {
         let mut buf8: [u8; 1] = [0; 1];
         let mut cstr: Vec<u8> = Vec::new();
         let mut reached_null = false;
         while !reached_null {
-            file.read_exact(&mut buf8)
-                .map_err(|e| format!("Could not read entry: {}", e))?;
+            file.read_exact(&mut buf8)?;
             if buf8[0] == 0 {
                 reached_null = true;
             } else {
@@ -90,43 +89,36 @@ impl MarkovChain {
             }
         }
 
-        let resword = String::from_utf8(cstr)
-            .map_err(|e| format!("Could not convert entry to string: {}", e))?;
-        Ok(resword)
+        String::from_utf8(cstr).map_err(|e| Error::new_string_error(e.utf8_error()))
     }
 
-    fn read_array(file: &mut File) -> Result<Vec<i32>, String> {
+    fn read_array(file: &mut File) -> Result<Vec<i32>> {
         let mut buf32: [u8; 4] = [0; 4];
-        file.read_exact(&mut buf32)
-            .map_err(|e| format!("Could not read array size: {}", e))?;
-        let size: usize = i32::unserialize(&buf32) as usize;
+        file.read_exact(&mut buf32)?;
+        let size: usize = i32::unserialize(&buf32)? as usize;
         let mut array_buffer: Vec<u8> = vec![0; size * 4];
-        file.read_exact(&mut array_buffer)
-            .map_err(|e| format!("Could not read array: {}", e))?;
-        let arr: Vec<i32> = Vec::unserialize(&array_buffer);
+        file.read_exact(&mut array_buffer)?;
 
-        Ok(arr)
+        Vec::unserialize(&array_buffer)
     }
 
-    fn read_props(file: &mut File) -> Result<HashMap<i32, i32>, std::io::Error> {
+    fn read_props(file: &mut File) -> Result<HashMap<i32, i32>> {
         let mut buf32: [u8; 4] = [0; 4];
         file.read_exact(&mut buf32)?;
 
-        let len: usize = i32::unserialize(&buf32) as usize;
+        let len: usize = i32::unserialize(&buf32)? as usize;
         let mut buf: Vec<u8> = vec![0; len * 4 * 2];
         file.read_exact(&mut buf)?;
 
-        let map: HashMap<i32, i32> = HashMap::unserialize(&buf);
-        Ok(map)
+        HashMap::unserialize(&buf)
     }
 
     /// Unserialized a Markov chain from a binary file.
-    pub fn from_binary(path: &Path) -> Result<MarkovChain, String> {
+    pub fn from_binary(path: &Path) -> Result<MarkovChain> {
         let mut tokens: Vec<String> = Vec::new();
         let mut props: Vec<HashMap<i32, i32>> = Vec::new();
 
-        let mut file = File::open(path)
-            .map_err(|e| format!("Could not open file {} : {}", path.to_str().unwrap(), e))?;
+        let mut file = File::open(path)?;
         let counter = MarkovChain::read_header(&mut file).unwrap();
         for _ in 0..counter {
             let word = MarkovChain::read_entry(&mut file).unwrap();
@@ -149,11 +141,13 @@ impl MarkovChain {
     }
 
     /// Save a plain text version of the markov chain data into a file.
-    pub fn save_txt(&self, path: &Path) -> Result<(), std::io::Error> {
+    pub fn save_txt(&self, path: &Path) -> Result<()> {
         let buff = self.txt_serialize();
         match File::create(path) {
-            Ok(mut file) => file.write_all(buff.as_bytes()),
-            Err(w) => Err(w),
+            Ok(mut file) => file
+                .write_all(buff.as_bytes())
+                .map_err(|e| Error::new_io_error(e)),
+            Err(w) => Err(Error::new_io_error(w)),
         }
     }
 
@@ -192,32 +186,32 @@ impl MarkovChain {
     }
 
     /// Save a binary version of the markov chain data into a file.
-    pub fn save_binary(&self, path: &Path) -> Result<(), std::io::Error> {
-        let ser = self.binary_serialize();
+    pub fn save_binary(&self, path: &Path) -> Result<()> {
+        let ser = self.binary_serialize()?;
         match File::create(path) {
-            Ok(mut bin_file) => bin_file.write_all(&ser),
-            Err(w) => Err(w),
+            Ok(mut bin_file) => bin_file.write_all(&ser).map_err(|e| Error::new_io_error(e)),
+            Err(w) => Err(Error::new_io_error(w)),
         }
     }
 
     /// Serialize the markov chain data to a binary format.
-    pub fn binary_serialize(&self) -> Vec<u8> {
+    pub fn binary_serialize(&self) -> Result<Vec<u8>> {
         let words_count: i32 = self.tokens.len() as i32;
         let mut ser: Vec<u8> = Vec::new();
-        ser.extend(&words_count.serialize());
-        ser.extend(&self.tokens.serialize());
+        ser.extend(&words_count.serialize()?);
+        ser.extend(&self.tokens.serialize()?);
 
-        ser.extend(&(self.start.len() as i32).serialize());
-        ser.extend(&self.start.serialize());
-        ser.extend(&(self.end.len() as i32).serialize());
-        ser.extend(&self.end.serialize());
+        ser.extend(&(self.start.len() as i32).serialize()?);
+        ser.extend(&self.start.serialize()?);
+        ser.extend(&(self.end.len() as i32).serialize()?);
+        ser.extend(&self.end.serialize()?);
 
         for val in self.props.iter() {
-            ser.extend(&(val.len() as i32).serialize());
-            ser.extend(&val.serialize());
+            ser.extend(&(val.len() as i32).serialize()?);
+            ser.extend(&val.serialize()?);
         }
 
-        ser
+        Ok(ser)
     }
 
     fn get_id(&self, word: &str) -> Option<i32> {

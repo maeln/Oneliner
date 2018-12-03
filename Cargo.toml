@@ -4,9 +4,12 @@ version = "0.1.0"
 authors = ["Maël <contact@maeln.com>"]
 
 [profile.release]
-debug = true
+#debug = false
 #lto = true
-opt-level = 3
+#opt-level = "z"
+debug = true
+lto = false
+opt-level = 2
 
 [dependencies]
 rand = "0.6.1"
